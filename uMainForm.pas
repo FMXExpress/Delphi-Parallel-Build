@@ -15,7 +15,7 @@ uses
   Data.Bind.DBScope, FMX.ScrollBox, FMX.Memo, FireDAC.Stan.StorageBin, FMX.ComboEdit,
   FMX.EditBox, FMX.ComboTrackBar, System.Threading
   {$IFDEF MSWINDOWS}
-  , WinApi.Windows, FMX.MultiView
+  , WinApi.Windows, FMX.MultiView, FMX.Memo.Types
   {$ENDIF}
   ;
 
@@ -73,7 +73,7 @@ type
     FCancel: Boolean;
     function ProcessTask(const AId: Integer): ITask;
     procedure BuildProject(const AId: Integer; const APath: String);
-    procedure BuildEnd;
+    procedure BuildEnd(const ATime: String);
   {$IFDEF MSWINDOWS}
     function ExeAndWait(ExeNameAndParams: string; ncmdShow: Integer = SW_SHOWNORMAL): Integer;
   {$ENDIF}
@@ -94,7 +94,7 @@ implementation
 {$R *.fmx}
 
 uses
-  System.IOUtils;
+  System.Diagnostics, System.IOUtils;
 
 procedure TMainForm.ScanButtonClick(Sender: TObject);
 var
@@ -117,6 +117,7 @@ begin
       ProjectsFDMemTable.Post;
     end;
   ProjectsFDMemTable.EndBatch;
+  StatusLabel.Text := ProjectsFDMemTable.RecordCount.ToString + ' projects found.';
 end;
 
 procedure TMainForm.SearchEditButton1Click(Sender: TObject);
@@ -156,10 +157,10 @@ begin
   end);
 end;
 
-procedure TMainForm.BuildEnd;
+procedure TMainForm.BuildEnd(const ATime: String);
 begin
   if FCancel=False then
-    StatusLabel.Text := 'Complete!'
+    StatusLabel.Text := 'Completed in '+ATime+'ms'
   else
     StatusLabel.Text := 'Canceled';
 
@@ -196,6 +197,10 @@ begin
 
       LThreadCount := Trunc(CPUTB.Value);
 
+      var StopWatch := TStopWatch.Create;
+
+      StopWatch.Start;
+
       for LIndex := 1 to LThreadCount do
         begin
           LTasks := LTasks + [ProcessTask(LIndex)];
@@ -205,7 +210,8 @@ begin
         TTask.Run(procedure begin
           TTask.WaitForAll(LTasks);
           TThread.Synchronize(nil,procedure begin
-           BuildEnd;
+           StopWatch.Stop;
+           BuildEnd(StopWatch.ElapsedMilliseconds.ToString);
           end);
         end);
    end;
@@ -241,7 +247,7 @@ begin
         if APath.ToUpper.IndexOf('FLATBOX2D')>0 then
           LAdditionalPath := ';DCC_UnitSearchPath=$(DCC_UnitSearchPath)\FlatBox2d;$(DCC_UnitSearchPath)';
 
-        OutBat.Append(Format(ExecParamsEdit.Text, [APAth, AId.ToString, PlatformComboEdit.Text, LAdditionalPath, CPUTB.Text]) + ' > ' + 'list'+AId.ToString + '.log');
+        OutBat.Append(Format(ExecParamsEdit.Text, [APAth, PlatformComboEdit.Text, LAdditionalPath, CPUTB.Text]) + ' > ' + 'list'+AId.ToString + '.log');
         if CleanSwitch.IsChecked then OutBat.Append(Format('msbuild "%s" /t:Clean /p:Platform=%s ', [APath, PlatformComboEdit.Text]));
         OutBat.SaveToFile(ExtractFilePath(ParamStr(0)) + 'list'+AId.ToString + '.bat');
         LCurrentFile := 'cmd /c call '+ExtractFilePath(ParamStr(0))+'list'+AId.ToString+'.bat';
