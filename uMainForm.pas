@@ -15,7 +15,9 @@ uses
   Data.Bind.DBScope, FMX.ScrollBox, FMX.Memo, FireDAC.Stan.StorageBin, FMX.ComboEdit,
   FMX.EditBox, FMX.ComboTrackBar, System.Threading
   {$IFDEF MSWINDOWS}
-  , WinApi.Windows, FMX.MultiView, FMX.Memo.Types
+  , WinApi.Windows, FMX.MultiView, FMX.Memo.Types, FMX.Grid.Style,
+  Data.Bind.Controls, Fmx.Bind.Grid, Data.Bind.Grid, Fmx.Bind.Navigator,
+  FMX.Grid
   {$ENDIF}
   ;
 
@@ -64,10 +66,27 @@ type
     Label7: TLabel;
     TabItem3: TTabItem;
     StatusBar1: TStatusBar;
+    Layout7: TLayout;
+    Layout8: TLayout;
+    TwineSwitch: TSwitch;
+    Label1: TLabel;
+    ClearButton: TButton;
+    ResetButton: TButton;
+    Layout11: TLayout;
+    Layout12: TLayout;
+    RetrySwitch: TSwitch;
+    Label3: TLabel;
+    ExtStringGrid: TStringGrid;
+    BindNavigator1: TBindNavigator;
+    ExtFDMemTable: TFDMemTable;
+    BindSourceDB4: TBindSourceDB;
+    LinkGridToDataSourceBindSourceDB4: TLinkGridToDataSource;
     procedure ScanButtonClick(Sender: TObject);
     procedure SearchEditButton1Click(Sender: TObject);
     procedure BuildButtonClick(Sender: TObject);
     procedure FormCreate(Sender: TObject);
+    procedure ClearButtonClick(Sender: TObject);
+    procedure ResetButtonClick(Sender: TObject);
   private
     { Private declarations }
     FCancel: Boolean;
@@ -103,8 +122,12 @@ var
   LItem: String;
 begin
   LSearchOption := TSearchOption.soAllDirectories;
-  LList := TDirectory.GetFiles(PathEdit.Text, '*.dproj', LSearchOption);
-  LList := LList + TDirectory.GetFiles(PathEdit.Text, '*.cbproj', LSearchOption);
+  ExtFDMemTable.First;
+  while not ExtFDMemTable.Eof do
+  begin
+    LList := LList + TDirectory.GetFiles(PathEdit.Text, ExtFDMemTable.FieldByName('Extension').AsWideString, LSearchOption);
+    ExtFDMemTable.Next;
+  end;
   ProjectsFDMemTable.EmptyDataSet;
   ProjectsFDMemTable.BeginBatch;
   for LItem in LList do
@@ -138,6 +161,14 @@ begin
       LPath := '';
 
       TThread.Synchronize(nil,procedure begin
+        if RetrySwitch.IsChecked=True then
+          if ProjectsFDMemTable.Locate('Status',VarArrayOf([STS_FAIL]),[])=True then
+            begin
+              ProjectsFDMemTable.Edit;
+              ProjectsFDMemTable.FieldByName('Status').AsString := STS_READY;
+              ProjectsFDMemTable.Post;
+            end;
+
         if ProjectsFDMemTable.Locate('Status',VarArrayOf([STS_READY]),[])=True then
           begin
             LPath := ProjectsFDMemTable.FieldByName('FullPath').AsString;
@@ -155,6 +186,21 @@ begin
         Break;
     end;
   end);
+end;
+
+procedure TMainForm.ResetButtonClick(Sender: TObject);
+begin
+  ErrorLogMemo.Lines.Clear;
+
+  ProjectsFDMemTable.First;
+
+  while not ProjectsFDMemTable.EOF do
+  begin
+    ProjectsFDMemTable.Edit;
+    ProjectsFDMemTable.FieldByName('Status').AsString := STS_READY;
+    ProjectsFDMemTable.Post;
+    ProjectsFDMemTable.Next;
+  end;
 end;
 
 procedure TMainForm.BuildEnd(const ATime: String);
@@ -179,16 +225,6 @@ begin
   case BuildButton.Tag of
    0: begin
       FCancel := False;
-
-      ErrorLogMemo.Lines.Clear;
-
-      while not ProjectsFDMemTable.EOF do
-      begin
-        ProjectsFDMemTable.Edit;
-        ProjectsFDMemTable.FieldByName('Status').AsString := STS_READY;
-        ProjectsFDMemTable.Post;
-        ProjectsFDMemTable.Next;
-      end;
 
       BuildButton.Tag := 1;
       BuildButton.Text := 'Cancel';
@@ -231,6 +267,7 @@ var
   LAdditionalPath: String;
   LPlatform: String;
   LName: String;
+  LProject: TStringList;
 begin
 
   SL := TStringList.Create;
@@ -238,6 +275,29 @@ begin
 
   LPlatform := 'Win32';
   LName := ExtractFileName(APath).Replace(ExtractFileExt(APath),'');
+
+  if TwineSwitch.IsChecked=True then
+  begin
+    LProject := TStringList.Create;
+    LProject.LoadFromFile(APath);
+    if LProject.Text.IndexOf('<Import Project="C:\Program Files (x86)\JomiTech\TwineCompile\TCTargets104.targets" />')=-1 then
+    begin
+    LProject.Text := LProject.Text.Replace('<Import Project="$(BDS)\Bin\CodeGear.Cpp.Targets" Condition="Exists(''$(BDS)\Bin\CodeGear.Cpp.Targets'')"/>','<Import Project="$(BDS)\Bin\CodeGear.Cpp.Targets" Condition="Exists(''$(BDS)\Bin\CodeGear.Cpp.Targets'')"/>'+'<Import Project="C:\Program Files (x86)\JomiTech\TwineCompile\TCTargets104.targets" />');
+    LProject.SaveToFile(APath);
+    end;
+    LProject.Free;
+  end
+  else
+  begin
+    LProject := TStringList.Create;
+    LProject.LoadFromFile(APath);
+    if LProject.Text.IndexOf('<Import Project="C:\Program Files (x86)\JomiTech\TwineCompile\TCTargets104.targets" />')>-1 then
+    begin
+      LProject.Text := LProject.Text.Replace('<Import Project="C:\Program Files (x86)\JomiTech\TwineCompile\TCTargets104.targets" />', '');
+      LProject.SaveToFile(APath);
+    end;
+    LProject.Free;
+  end;
 
   OutBat := TStringList.Create;
   try
@@ -282,12 +342,28 @@ begin
           Application.ProcessMessages;
         end);
 
+    if TwineSwitch.IsChecked=True then
+    begin
+      LProject := TStringList.Create;
+      LProject.LoadFromFile(APath);
+      if LProject.Text.IndexOf('<Import Project="C:\Program Files (x86)\JomiTech\TwineCompile\TCTargets104.targets" />')>-1 then
+      begin
+        LProject.Text := LProject.Text.Replace('<Import Project="C:\Program Files (x86)\JomiTech\TwineCompile\TCTargets104.targets" />', '');
+        LProject.SaveToFile(APath);
+      end;
+      LProject.Free;
+    end;
 
     finally
       OutBat.Free;
       SL.Free;
     end;
 
+end;
+
+procedure TMainForm.ClearButtonClick(Sender: TObject);
+begin
+  ProjectsFDMemTable.EmptyDataSet;
 end;
 
 {$IFDEF MSWINDOWS}
@@ -326,6 +402,9 @@ end;
 procedure TMainForm.FormCreate(Sender: TObject);
 begin
   BuildButton.Hint := BuildButton.Text;
+
+  CPUTB.Text := System.CPUCount.ToString;
+  TLinkObservers.ControlChanged(CPUTB);
 end;
 
 end.
