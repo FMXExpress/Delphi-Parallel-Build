@@ -3,7 +3,7 @@ Build massive amount of Delphi and C++Builder projects in parallel.
 
 ---
 
-Supports TwineCompile for C++ projects. TwineCompile doesn't support parallel building of multiple projects in parallel though so set the CPU count to 1 in TwineCompile is enabled.
+Supports TwineCompile for C++ projects. TwineCompile doesn't support parallel building of multiple projects in parallel though so set the CPU count to 1 if TwineCompile is enabled.
 
 ---
 
